@@ -1,0 +1,8 @@
+# Mounted drive path
+DRIVE_PATH = "/path/to/drive"
+
+# Index file
+DB_PATH = "index_db_name.db"
+
+# Folders to skip (not indexed)
+SKIP_FOLDERS = {"venv", "node_modules", ".git", "__pycache__"}
