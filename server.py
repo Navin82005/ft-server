@@ -16,13 +16,13 @@ indexing_done = False
 indexing_thread = None
 
 def index_worker():
+    global indexing_done
     """Background thread to build index"""
     start_time = datetime.datetime.now()
     build_file_index()
     complete_time = datetime.datetime.now()
     print(complete_time - start_time, "took to index files")
     indexing_done = True
-    
 
 
 def start_indexing():
