@@ -10,7 +10,6 @@ from config import DB_PATH, DRIVE_PATH, INDEX_LOG_FILE, SKIP_FOLDERS
 # Store errors during one indexing run
 _indexing_errors = []
 
-
 def log_error(subject: str, message: str):
     """Log error to file and memory (no email yet)"""
     with open(INDEX_LOG_FILE, "a") as f:

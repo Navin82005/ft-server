@@ -5,3 +5,7 @@ venv
 *.db*
 # config.py
 # config.py-example
+
+
+# server only files
+*.log*
