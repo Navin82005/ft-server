@@ -1,5 +1,5 @@
 # Mounted drive path
-DRIVE_PATH = "/"
+DRIVE_PATH = "/media/pi"
 
 # Index file
 DB_PATH = "file_index.db"
