@@ -94,7 +94,6 @@ def list_files():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 if __name__ == '__main__':
     # Start indexing in a background thread
     threading.Thread(target=index_worker, daemon=True).start()
