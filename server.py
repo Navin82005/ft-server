@@ -17,12 +17,12 @@ indexing_thread = None
 
 def index_worker():
     """Background thread to build index"""
-    global indexing_done
     start_time = datetime.datetime.now()
     build_file_index()
     complete_time = datetime.datetime.now()
     print(complete_time - start_time, "took to index files")
     indexing_done = True
+    
 
 
 def start_indexing():
@@ -131,6 +131,8 @@ def download_file(filename):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-if __name__ == '__main__':
-    start_indexing()  # start the indexing thread safely
-    app.run(host='0.0.0.0', port=8080, debug=True)
+if __name__ == "__main__":
+    # Prevent double-start in debug mode
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+        start_indexing()
+    app.run(host="0.0.0.0", port=8080, debug=True, use_reloader=False)
