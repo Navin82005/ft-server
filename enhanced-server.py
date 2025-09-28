@@ -6,14 +6,12 @@ import os
 import sqlite3
 
 
-from config import DB_PATH, DRIVE_PATH, MAX_RESULTS, UPLOAD_FOLDER
+from config import DB_PATH, DRIVE_PATH, UPLOAD_FOLDER
 from tools.indexing import build_file_index
 
 
 import uuid
 from werkzeug.utils import secure_filename
-
-from utils.db_utils import init_uploaded_db, insert_uploaded_file
 
 
 app = Flask(__name__)
@@ -59,15 +57,18 @@ def find_files_in_drive(query):
     return matches
 
 
-def get_file_stats(path):
+def get_file_stats(file_path):
+    """Get file statistics safely"""
     try:
-        st = os.stat(path)
+        stat = os.stat(file_path)
         return {
-            "size": st.st_size,
-            "modified": st.st_mtime,
+            'size': stat.st_size,
+            'modified': datetime.datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            'created': datetime.datetime.fromtimestamp(stat.st_ctime).isoformat()
         }
-    except Exception:
-        return {"size": 0, "modified": None}
+    except OSError:
+        return {'size': 0, 'modified': None, 'created': None}
+
 
 @app.route('/files')
 def list_files():
@@ -95,87 +96,34 @@ def list_files():
 
 @app.route('/search')
 def search_files():
-    """Search indexed and uploaded files by query parameter"""
+    """Search for files by query parameter"""
     try:
         query = request.args.get('q', '').strip()
         if not query:
             return jsonify({"error": "Query parameter 'q' is required"}), 400
+        
         if len(query) < 2:
             return jsonify({"error": "Query must be at least 2 characters"}), 400
-
-        like_pattern = f"%{query.lower()}%"
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-
-        # Search indexed files
-        cur.execute("""
-            SELECT name, path FROM files 
-            WHERE LOWER(name) LIKE ? 
-            LIMIT ?
-        """, (like_pattern, MAX_RESULTS))
-        indexed_matches = cur.fetchall()
-
-        # Search uploaded files
-        cur.execute("""
-            SELECT original_name, path FROM uploaded_files 
-            WHERE LOWER(original_name) LIKE ? 
-            LIMIT ?
-        """, (like_pattern, MAX_RESULTS))
-        uploaded_matches = cur.fetchall()
-        conn.close()
-
-        # Combine matches with source label
-        results_map = {}
-
-        for name, path in indexed_matches:
-            key = name.lower()
-            results_map.setdefault(key, []).append({
-                "name": name,
-                "path": os.path.relpath(path, DRIVE_PATH),
-                "full_path": path,
-                "source": "indexed"
-            })
-
-        for name, path in uploaded_matches:
-            key = name.lower()
-            results_map.setdefault(key, []).append({
-                "name": name,
-                "path": os.path.relpath(path, UPLOAD_FOLDER),
-                "full_path": path,
-                "source": "uploaded"
-            })
-
-        # Flatten results & handle multiple matches for same name
+            
+        matches = find_files_in_drive(query)
+        
         results = []
-        choices = None
-        for key, file_entries in results_map.items():
-            if len(file_entries) == 1:
-                entry = file_entries[0]
-                stats = get_file_stats(entry["full_path"])
-                results.append({
-                    "name": entry["name"],
-                    "size": stats["size"],
-                    "path": entry["path"],
-                    "modified": stats["modified"],
-                    "source": entry["source"]
-                })
-            else:
-                # Multiple matches for same name: collect paths for 300 Multiple Choices
-                if not choices:
-                    choices = []
-                choices.extend([entry["path"] for entry in file_entries])
-
-        response = {
+        for name, path in matches:
+            stats = get_file_stats(path)
+            results.append({
+                "name": name,
+                "size": stats['size'],
+                "path": os.path.relpath(path, DRIVE_PATH),
+                "modified": stats['modified'],
+                "full_path": path
+            })
+        
+        return jsonify({
             "query": query,
-            "count": len(results),
             "results": results,
-        }
-        if choices:
-            # Return 300 Multiple Choices response with list of paths
-            return jsonify({"choices": list(set(choices))}), 300
-
-        return jsonify(response)
-
+            "count": len(results)
+        })
+        
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -239,6 +187,7 @@ def download_file_using_path():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 @app.route('/download/<path:filename>')
 def download_file(filename):
     try:
@@ -264,6 +213,7 @@ def download_file(filename):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/upload", methods=["POST"])
 def upload_file():
@@ -301,9 +251,6 @@ def upload_file():
                     filepath = os.path.join(UPLOAD_FOLDER, unique_filename)
                     f.save(filepath)
                     
-                    # Insert record into uploaded_files table
-                    insert_uploaded_file(f.filename, unique_filename, file_size, filepath)
-                    
                     uploaded_files.append({
                         "original_name": f.filename,
                         "saved_name": unique_filename,
@@ -332,30 +279,36 @@ def upload_file():
         return jsonify({"error": f"Upload failed: {str(e)}"}), 500
 
 
-@app.route("/uploaded-files", methods=["GET"])
+@app.route("/uploaded-files")
 def list_uploaded_files():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("SELECT original_name, saved_name, size, path, upload_time FROM uploaded_files ORDER BY upload_time DESC")
-    rows = cur.fetchall()
-    conn.close()
-
-    files = [
-        {
-            "original_name": row[0],
-            "saved_name": row[1],
-            "size": row[2],
-            "path": row[3],
-            "upload_time": row[4],
-        }
-        for row in rows
-    ]
-    return jsonify({"files": files})
+    """List files in the upload folder"""
+    try:
+        if not os.path.exists(UPLOAD_FOLDER):
+            return jsonify({"files": [], "count": 0})
+            
+        files = []
+        for filename in os.listdir(UPLOAD_FOLDER):
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            if os.path.isfile(filepath):
+                stats = get_file_stats(filepath)
+                files.append({
+                    "name": filename,
+                    "size": stats['size'],
+                    "modified": stats['modified'],
+                    "path": filepath
+                })
+        
+        # Sort by modification time, newest first
+        files.sort(key=lambda x: x['modified'] or '', reverse=True)
+        
+        return jsonify({"files": files, "count": len(files)})
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
     # Prevent double-start in debug mode
     if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
         start_indexing()
-        init_uploaded_db()
     app.run(host="0.0.0.0", port=8080, debug=True, use_reloader=False)

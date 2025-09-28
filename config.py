@@ -2,7 +2,8 @@
 DRIVE_PATH = "/media"
 
 # Index file
-DB_PATH = "file_index.db"
+DB_PATH = "file.db"
+MAX_RESULTS = 100
 
 # Log files
 INDEX_LOG_FILE = "indexing_errors.log"
@@ -16,3 +17,5 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 SMTP_USER = "navin82005@gmail.com"
 SMTP_PASS = "eawx tuez baim velh"
+
+UPLOAD_FOLDER = "/media/uploads"
